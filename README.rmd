@@ -1,0 +1,114 @@
+---
+title: "Practical Machine Learning Project"
+author: "Hitesh Tulsani"
+date: "Monday, November 17, 2014"
+output:
+  html_document:
+    keep_md: yes
+---
+
+###Predicting Quality of exercise activity
+
+Research on activity recognition has traditionally focused on discriminating between different activities, i.e. to predict which" activity was performed at a specific point in time. The quality of executing an activity, the "how (well)", has only received little attention so far, even though it potentially provides useful information for a large variety of applicationsIn this project we will use supervised learning techniques to predict how well an activity is being performed, using the training and testing datasets of the Practical Machine Learning course, which come from the HAR project by Groupware@LES.
+
+
+####Getting the data
+The training dataset is available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and the testing dataset is available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv). 
+
+```{r, cache=TRUE}
+
+set.seed(230583) ##required for reproducibility
+library(caret) ##required for modelling 
+
+##if files exists - don't download
+if(!file.exists("pml-training.csv")){
+    download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-training.csv")
+}  
+
+
+if(!file.exists("pml-testing.csv")){
+    download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml-testing.csv")
+}
+
+## read the training data into data
+data <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!"))
+```
+
+#### Preliminary data analysis
+
+The dataset consists in 19622 observations of 160 features. The goal is to predict the ```classe``` feature, which is a factor identifying the quality of the activity performance, with following meanings:
+
+  *    Class A: exactly according to the specification
+  *    Class B: throwing the elbows to the front 
+  *    Class C: lifting the dumbbell only halfway
+  *    Class D: lowering the dumbbell only halfway and 
+  *    Class E: throwing the hips to the front
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. There are few variables in the dataset, which will lead to overfitting as these are not related to the quality of the performance. There are other measures which are just statistics such as avg, variance, sd etc, which must be removed:
+
+```{r, cache=TRUE}
+data <- data[, -c(1:7)]
+data <- data[, -grep("^avg|^var|^stddev|^amplitude|^min|^max|^skewness|^kurtosis", attr(data, "names"))]
+```
+
+The data is then divided into training and test sets. Post this, the correlated variables are removed from training set:
+
+```{r, cache=TRUE}
+inTrain <- createDataPartition(y = data$classe, p = 0.7, list=FALSE)
+training <- data[inTrain,]
+testing <- data[-inTrain,]
+
+##remove correlated variables
+training <- training[,-findCorrelation(cor(training[,-53]))]
+```
+
+#### Predicting the error rate for random forests
+I chose Random Forests because with so many variables and the associated noise, random forest method with (OOB) cross-validation is more adequate.
+
+```{r, cache=TRUE}
+## 5 out-of-bag resamples
+tr <- trainControl(method="oob", number=5)
+
+##Build a model with 50 trees
+modelrf <- train(classe~., data=training, method="rf", trControl = tr, ntree=50)
+
+modelrf$finalModel
+
+```
+
+The estimated error rate with 50 trees and 5 OOB resamples is: 0.79%
+
+#### Final model
+
+Final Model is a Random Forest with 1000 trees and 15 OOB resamples:
+
+```{r, cache=TRUE}
+tr <- trainControl(method="oob", number=15)
+model <- train(classe~., data=training, method="rf", trControl = tr, ntree=1000)
+
+model
+
+model$finalModel
+```
+
+The estimated error rate is 0.7%
+
+#### Testing the Model
+```{r, cache=TRUE}
+confusionMatrix(predict(model, testing), testing$classe)
+```
+
+The error rate for the test dataset is approx 0.713%, being close to the model.
+
+#### Applying the model to predict 20 test cases
+```{r, cache=TRUE}
+quizdata<-read.csv("pml-testing.csv",na.strings = c("NA", "#DIV/0!"))
+
+predict(model, quizdata)
+
+```
+
+#### References
+
+1. Quality Activity Recognition of [Weigh Lifting Exercise](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201)
+2. [Original Paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)
